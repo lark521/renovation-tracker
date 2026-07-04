@@ -1,0 +1,6 @@
+instance/
+uploads/
+__pycache__/
+*.log
+.server.pid
+.env
