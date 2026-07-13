@@ -964,8 +964,10 @@ let draggedExpenseId = null;
 async function api(url, opts = {}) {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
     ...opts,
   });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
 
@@ -985,22 +987,24 @@ function closeModal(id) { document.getElementById(id).classList.remove("active")
 
 // ===== Load Data =====
 async function loadData() {
-  const [expRes, catRes, statsRes] = await Promise.all([
+  const [expRes, catRes, statsRes] = await Promise.allSettled([
     api("/api/expenses"),
     api("/api/categories"),
     api("/api/stats/summary"),
   ]);
   
-  allExpenses = expRes.expenses || [];
-  allCategories = catRes.categories || [];
+  allExpenses = (expRes.status === 'fulfilled' && expRes.value.expenses) ? expRes.value.expenses : [];
+  allCategories = (catRes.status === 'fulfilled' && catRes.value.categories) ? catRes.value.categories : [];
   categoryColors = {};
   allCategories.forEach(c => categoryColors[c.name] = c.color);
+  
+  const stats = (statsRes.status === 'fulfilled') ? statsRes.value : {};
   
   populateCategoryFilter();
   populateCategorySelect();
   updateListCategories();
   await renderBoard();
-  updateStats(statsRes);
+  updateStats(stats);
   loadCharts();
 }
 
@@ -1565,17 +1569,14 @@ function makeOption(data, title) {
 
 async function loadCharts() {
   try {
-    const [areaRes, catRes, typeRes] = await Promise.all([
-      fetch('/api/charts/by-area'),
-      fetch('/api/charts/by-category'),
-      fetch('/api/charts/by-type'),
+    const [areaData, catData, typeData] = await Promise.all([
+      api("/api/charts/by-area"),
+      api("/api/charts/by-category"),
+      api("/api/charts/by-type"),
     ]);
-    const areaData = await areaRes.json().then(r => r.data);
-    const catData = await catRes.json().then(r => r.data);
-    const typeData = await typeRes.json().then(r => r.data);
-    if (chartArea) chartArea.setOption(makeOption(areaData, '区域'));
-    if (chartCategory) chartCategory.setOption(makeOption(catData, '分类'));
-    if (chartType) chartType.setOption(makeOption(typeData, '类型'));
+    if (chartArea) chartArea.setOption(makeOption(areaData.data || [], '区域'));
+    if (chartCategory) chartCategory.setOption(makeOption(catData.data || [], '分类'));
+    if (chartType) chartType.setOption(makeOption(typeData.data || [], '类型'));
   } catch(e) {
     console.error('图表加载失败:', e);
   }
