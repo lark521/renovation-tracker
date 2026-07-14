@@ -189,28 +189,43 @@ def move_card():
 @api.route("/api/stats/summary", methods=["GET"])
 @login_required
 def get_summary():
-    all_expenses = Expense.query.all()
-    total_amount = sum(e.amount for e in all_expenses)
+    from sqlalchemy import func
+    # Single query: total amount and count
+    total_result = db.session.query(
+        func.coalesce(func.sum(Expense.amount), 0).label("total_amount"),
+        func.count(Expense.id).label("total_count")
+    ).first()  # type: ignore[assignment]
+    total_amount = float(total_result.total_amount)
+    total_items = int(total_result.total_count)
+    
+    # Single query: total budget
     total_budget = sum(b.total_budget for b in Budget.query.all())
     
-    category_stats = {}
-    for e in all_expenses:
-        if e.category not in category_stats:
-            category_stats[e.category] = {"total": 0, "count": 0}
-        category_stats[e.category]["total"] += e.amount
-        category_stats[e.category]["count"] += 1
+    # Single query: category breakdown
+    cat_results = db.session.query(
+        Expense.category,
+        func.sum(Expense.amount).label("total"),
+        func.count(Expense.id).label("count")
+    ).group_by(Expense.category).all()
+    category_stats = {
+        r.category: {"total": round(float(r.total), 2), "count": int(r.count)}
+        for r in cat_results
+    }
     
-    status_stats = {}
-    for e in all_expenses:
-        status_stats[e.status] = status_stats.get(e.status, 0) + 1
+    # Single query: status breakdown
+    status_results = db.session.query(
+        Expense.status,
+        func.count(Expense.id).label("cnt")
+    ).group_by(Expense.status).all()
+    status_stats = {r.status: int(r.cnt) for r in status_results}
     
     return jsonify({
         "total_amount": round(total_amount, 2),
         "total_budget": total_budget,
         "budget_remaining": round(total_budget - total_amount, 2),
         "budget_usage": round(total_amount / total_budget * 100, 1) if total_budget > 0 else 0,
-        "total_items": len(all_expenses),
-        "category_stats": {k: {"total": round(v["total"], 2), "count": v["count"]} for k, v in category_stats.items()},
+        "total_items": total_items,
+        "category_stats": category_stats,
         "status_stats": status_stats,
     })
 

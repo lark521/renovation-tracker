@@ -5,26 +5,34 @@ import secrets
 from flask import Flask, render_template, session, request, redirect, jsonify
 from functools import wraps
 from models import db, KanbanCategory
+import secrets
+
+
+def _load_env_var(key, app_dir):
+    """Load a variable from environment or .env file."""
+    val = os.environ.get(key)
+    if val:
+        return val
+    env_path = os.path.join(app_dir, ".env")
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
 
 def create_app():
     app = Flask(__name__)
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///renovation.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    
     # Load secret key from .env file (persisted across restarts)
-    secret_key = os.environ.get("SECRET_KEY")
+    secret_key = _load_env_var("SECRET_KEY", APP_DIR)
     if not secret_key:
-        env_path = os.path.join(APP_DIR, ".env")
-        if os.path.exists(env_path):
-            with open(env_path) as f:
-                for line in f:
-                    if line.startswith("SECRET_KEY="):
-                        secret_key = line.split("=", 1)[1].strip()
-                        break
-    if not secret_key:
-        import secrets
         secret_key = secrets.token_hex(32)
-        with open(os.path.join(APP_DIR, ".env"), "w") as f:
+        with open(os.path.join(APP_DIR, ".env"), "a") as f:
             f.write(f"SECRET_KEY={secret_key}\n")
     
     app.config["SECRET_KEY"] = secret_key
@@ -75,22 +83,11 @@ def create_app():
         password = data.get("password", "").strip()
         
         # Load credentials from .env file (not hardcoded)
-        cred_user = os.environ.get("AUTH_USER")
-        cred_pass = os.environ.get("AUTH_PASS")
-        if not cred_user or not cred_pass:
-            env_path = os.path.join(APP_DIR, ".env")
-            if os.path.exists(env_path):
-                with open(env_path) as f:
-                    for line in f:
-                        if line.startswith("AUTH_USER="):
-                            cred_user = line.split("=", 1)[1].strip()
-                        elif line.startswith("AUTH_PASS="):
-                            cred_pass = line.split("=", 1)[1].strip()
+        cred_user = _load_env_var("AUTH_USER", APP_DIR)
+        cred_pass = _load_env_var("AUTH_PASS", APP_DIR)
         
         if not cred_user or not cred_pass:
-            # Fallback to hardcoded (shouldn't happen)
-            cred_user = "shaohua"
-            cred_pass = "Lsh@2026"
+            return jsonify({"error": "系统配置错误：未在.env中找到认证信息"}), 500
         
         if username == cred_user and password == cred_pass:
             session["logged_in"] = True

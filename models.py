@@ -69,10 +69,10 @@ class Budget(db.Model):
     def spent(self):
         """从 expenses 表实时计算已支出，不冗余存储"""
         from sqlalchemy import func
-        total = db.session.query(func.sum(Expense.amount)).filter(
+        total = db.session.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
             Expense.category == self.category
         ).scalar()
-        return float(total) if total else 0
+        return float(total)
     
     @property
     def remaining(self):
@@ -89,34 +89,7 @@ class Budget(db.Model):
             "id": self.id,
             "category": self.category,
             "total_budget": self.total_budget,
-            "spent": round(self.spent, 2),
-            "remaining": round(self.remaining, 2),
-            "usage_rate": round(self.usage_rate, 1),
+            "spent": round(float(self.spent), 2),
+            "remaining": round(float(self.remaining), 2),
+            "usage_rate": round(float(self.usage_rate), 1),
         }
-
-
-def init_db(app):
-    """初始化数据库并创建默认分类"""
-    db.init_app(app)
-    with app.app_context():
-        db.create_all()
-        
-        default_categories = [
-            ("水电改造", "#e74c3c"),
-            ("泥瓦工程", "#e67e22"),
-            ("木工工程", "#f1c40f"),
-            ("油漆工程", "#2ecc71"),
-            ("瓷砖铺贴", "#1abc9c"),
-            ("家具购置", "#3498db"),
-            ("电器采购", "#9b59b6"),
-            ("软装搭配", "#e91e63"),
-            ("其他支出", "#7f8c8d"),
-        ]
-        
-        for name, color in default_categories:
-            if not KanbanCategory.query.filter_by(name=name).first():
-                cat = KanbanCategory(name=name, color=color, sort_order=default_categories.index((name, color)))
-                db.session.add(cat)
-        
-        db.session.commit()
-        print("Database initialized with default categories.")
