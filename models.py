@@ -64,7 +64,15 @@ class Budget(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     category = db.Column(db.String(50), nullable=False)
     total_budget = db.Column(db.Float, nullable=False, default=0)
-    spent = db.Column(db.Float, nullable=False, default=0)
+    
+    @property
+    def spent(self):
+        """从 expenses 表实时计算已支出，不冗余存储"""
+        from sqlalchemy import func
+        total = db.session.query(func.sum(Expense.amount)).filter(
+            Expense.category == self.category
+        ).scalar()
+        return float(total) if total else 0
     
     @property
     def remaining(self):
@@ -81,8 +89,8 @@ class Budget(db.Model):
             "id": self.id,
             "category": self.category,
             "total_budget": self.total_budget,
-            "spent": self.spent,
-            "remaining": self.remaining,
+            "spent": round(self.spent, 2),
+            "remaining": round(self.remaining, 2),
             "usage_rate": round(self.usage_rate, 1),
         }
 

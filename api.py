@@ -74,7 +74,6 @@ def create_expense():
     )
     db.session.add(expense)
     db.session.commit()
-    update_category_spent(expense.category, expense.amount, action="add")
     return jsonify({"expense": expense.to_dict()}), 201
 
 
@@ -86,20 +85,12 @@ def update_expense(expense_id):
     if not data:
         return jsonify({"error": "请提供 JSON 数据"}), 400
     
-    old_category = expense.category
-    old_amount = expense.amount
-    
     for field in ["title", "category", "amount", "date", "description", "status", "priority", "area"]:
         if field in data:
             setattr(expense, field, data[field])
     
     expense.updated_at = datetime.utcnow()
     db.session.commit()
-    
-    if old_category != expense.category or old_amount != expense.amount:
-        update_category_spent(old_category, old_amount, action="subtract")
-        update_category_spent(expense.category, expense.amount, action="add")
-    
     return jsonify({"expense": expense.to_dict()})
 
 
@@ -107,7 +98,6 @@ def update_expense(expense_id):
 @login_required
 def delete_expense(expense_id):
     expense = Expense.query.get_or_404(expense_id)
-    update_category_spent(expense.category, expense.amount, action="subtract")
     db.session.delete(expense)
     db.session.commit()
     return jsonify({"message": "已删除"})
@@ -179,12 +169,8 @@ def move_card():
             results.append({"id": move.get("id"), "status": "not_found"})
             continue
         
-        old_category = expense.category
-        if move.get("category") and move["category"] != old_category:
-            amount = expense.amount
-            update_category_spent(old_category, amount, action="subtract")
+        if move.get("category") and move["category"] != expense.category:
             expense.category = move["category"]
-            update_category_spent(move["category"], amount, action="add")
         
         if move.get("status"):
             expense.status = move["status"]
@@ -232,27 +218,10 @@ def get_summary():
 @api.route("/api/stats/categories", methods=["GET"])
 @login_required
 def get_category_stats():
-    all_expenses = Expense.query.all()
-    
-    # Calculate actual spent from expenses table for each category
-    actual_spent = {}
-    for e in all_expenses:
-        if e.category not in actual_spent:
-            actual_spent[e.category] = 0
-        actual_spent[e.category] += e.amount
-    
     budgets = Budget.query.all()
     result_budgets = []
     for b in budgets:
-        actual = actual_spent.get(b.category, 0)
-        result_budgets.append({
-            "id": b.id,
-            "category": b.category,
-            "total_budget": b.total_budget,
-            "spent": round(actual, 2),
-            "remaining": round(b.total_budget - actual, 2),
-            "usage_rate": round(min(actual / b.total_budget * 100, 200), 1) if b.total_budget > 0 else 0,
-        })
+        result_budgets.append(b.to_dict())
     
     return jsonify({"budgets": result_budgets})
 
@@ -293,20 +262,6 @@ def update_budget():
     
     db.session.commit()
     return jsonify({"success": True, "budget": budget.to_dict()})
-
-
-def update_category_spent(category, amount, action="add"):
-    budget = Budget.query.filter_by(category=category).first()
-    if not budget:
-        if action == "add":
-            budget = Budget(category=category, total_budget=0, spent=amount)
-            db.session.add(budget)
-    else:
-        if action == "add":
-            budget.spent += amount
-        elif action == "subtract":
-            budget.spent = max(0, budget.spent - amount)
-    db.session.commit()
 
 
 # ==================== 数据导入 ====================
@@ -382,9 +337,6 @@ def import_csv():
             db.session.add(expense)
         
         db.session.commit()
-        
-        for row in rows:
-            update_category_spent(row["category"], float(row["amount"]), "add")
         
         return jsonify({"message": f"成功导入 {len(rows)} 条记录", "imported": len(rows)})
     

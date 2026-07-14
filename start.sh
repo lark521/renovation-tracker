@@ -13,5 +13,5 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 cd "$APP_DIR"
-$VENV_PYTHON app.py > "$LOG_FILE" 2>&1 &
+$VENV_PYTHON app.py >> "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
